@@ -4,57 +4,90 @@ import colors from 'ansi-colors';
 import child_process from "node:child_process";
 import { writeFile } from "node:fs/promises";
 
-export const joinIntegersFromFiles = (prefix) => {
-  console.log(`\r \x1b[1m\x1b[93m Join and sort integers has been started \x1b[0m\x1b[0m`);
-  const highWaterMark = 2;
+const writeToFile = (chunkToWrite, outputStream) => new Promise((res, rej) => {
+  try {
+    if (
+      !outputStream.write(chunkToWrite, 'utf-8', (err) => {
+        if (err) rej(err);
+        res();
+      })
+    ) {
+      outputStream.once("drain", () => {
+        res()
+      });
+    }
+  } catch (error) {
+    console.log(colors.red(error));
+  }
+});
 
-  const file1 = fs.createReadStream('chunk_1.txt', { highWaterMark });
-  const file2 = fs.createReadStream('chunk_2.txt', { highWaterMark });
-  const file3 = fs.createReadStream('chunk_3.txt', { highWaterMark });
-  const file4 = fs.createReadStream('chunk_4.txt', { highWaterMark });
-  const file5 = fs.createReadStream('chunk_5.txt', { highWaterMark });
-  
-  const output = fs.createWriteStream('output.txt')
-  
-  const streams = [
-    file1,
-    file2,
-    file3,
-    file4,
-    file5
-  ];
-  
-  const writeToOutputMinValue = () => {
-    const filteredValues = Object.entries(numbers).sort((a,b) => {
-      const aInt = Number.parseInt(a[1]);
-      const bInt = Number.parseInt(b[1]);
-      if(aInt > bInt) return 1;
-      if(aInt < bInt) return -1;
-      if(aInt === bInt) return -1;
-    })
-  
-    const minValue = filteredValues[0][1]
-    const minValueStreamIdx = filteredValues[0][0]
+export const joinIntegersFromFiles = async (numberOfChunks) => {
+  console.log(colors.yellowBright('Join and sort integers has been started'));
+  const outputFileName = 'output.txt';
+  const streamGenerators = [];
 
-    output.write(minValue)
-    numbers[minValueStreamIdx] = null
-    streams[minValueStreamIdx].resume()
+  for (let i = 1; i <= numberOfChunks; i++) {
+    const generator = readline
+      .createInterface({
+        input: fs.createReadStream(`chunk_${i}.txt`),
+        crlfDelay: Infinity,
+      })[Symbol.asyncIterator]();
+
+    streamGenerators.push(generator);
   }
 
-  const numbers = {};
-  
-  streams.forEach((stream, idx) => {
-    stream.on('data', function (chunk) {
-      if (chunk !== null && Object.values(numbers).length <= streams.length) {
-        stream.pause();
-        numbers[idx] = chunk;
+  const output = fs.createWriteStream(outputFileName)
 
-        if (Object.values(numbers).length === streams.length && !Object.values(numbers).includes(null)) {
-          writeToOutputMinValue()
-        }
+  const numbers = [];
+
+  for await (let generator of streamGenerators) {
+    const { done, value } = await generator.next();
+    if (done) continue;
+
+    const generatorVal = parseInt(value);
+
+    if (!Number.isNaN(generatorVal)) {
+      numbers.push(generatorVal);
+    }
+  }
+
+  let min = Infinity;
+  let minIdx = 0;
+  let chunkSize = 0;
+  let outputString = '';
+
+  while (true) {
+    for (let i = 0; i < numbers.length; i++) {
+      if (numbers[i] < min) {
+        min = numbers[i];
+        minIdx = i;
       }
-    })
-  })
+    }
+
+    if (min === Infinity) {
+      outputString && (await writeToFile(outputString, output))
+      break;
+    }
+
+    const strToWrite = String(min) + "\n";
+    chunkSize += Buffer.byteLength(strToWrite);
+
+    if (chunkSize > output.writableHighWaterMark) {
+      await writeToFile(outputString, output);
+      chunkSize = 0
+      outputString = ''
+    }
+
+    outputString += strToWrite
+
+    const { value } = await streamGenerators[minIdx].next();
+
+    Number.isNaN(parseInt(value))
+      ? numbers[minIdx] = Infinity
+      : numbers[minIdx] = Number(value);
+
+    min = Infinity;
+  }
 }
 
 export const splitFileOnChunksWithSort = (fileName, numberOfChunks) => {
@@ -119,8 +152,8 @@ export const splitFileOnChunksWithSort = (fileName, numberOfChunks) => {
 
 export const createFileWithIntegers = async (fileName, fileSize) => {
   return new Promise((resolve, reject) => {
-    console.log(`\r \x1b[1m\x1b[92m Write integers to file has been started \x1b[0m\x1b[0m`);
-    //создаем файл если его нет
+    console.log(colors.green('Write integers to file has been started'));
+
     if (!fs.existsSync(fileName)) {
       fs.writeFile(fileName, '', (err) => {
         if (err) throw err;
@@ -155,17 +188,16 @@ export const createFileWithIntegers = async (fileName, fileSize) => {
     }
 
     file.on('close', () => {
-      console.log(`\r \x1b[1m\x1b[93m File created successfully \x1b[0m\x1b[0m`);
+      console.log(colors.green('File created successfully'));
       resolve()
     });
 
     file.on('error', (error) => {
-      console.log(`\r \x1b[1m\x1b[43m File created successfully \x1b[0m\x1b[0m`);
-      console.log(`File not created: ${error}`);
+      console.log(colors.green('File created successfully'));
+      console.log(colors.red(`File not created: ${error}`));
     });
 
     writeChunk();
 
   })
-  
 }

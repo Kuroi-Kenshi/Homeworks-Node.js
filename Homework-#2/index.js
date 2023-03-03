@@ -7,4 +7,4 @@ const numberOfChunks = 20;
 
 await createFileWithIntegers(fileName, fileSize)
 await splitFileOnChunksWithSort(fileName, numberOfChunks)
-joinIntegersFromFiles()
+joinIntegersFromFiles(numberOfChunks)
