@@ -1,4 +1,8 @@
 import fs from 'node:fs';
+import readline from 'node:readline';
+import colors from 'ansi-colors';
+import child_process from "node:child_process";
+import { writeFile } from "node:fs/promises";
 
 export const joinIntegersFromFiles = (prefix) => {
   console.log(`\r \x1b[1m\x1b[93m Join and sort integers has been started \x1b[0m\x1b[0m`);
@@ -54,41 +58,63 @@ export const joinIntegersFromFiles = (prefix) => {
 }
 
 export const splitFileOnChunksWithSort = (fileName, numberOfChunks) => {
-  return new Promise((resolve, reject) => {
-    console.log(`\r \x1b[1m\x1b[93m Chunking has been started \x1b[0m\x1b[0m`);
-    let fileSize = fs.statSync(fileName).size;
-    const chunkSize = Math.ceil(fileSize / numberOfChunks);
-  
-    let currentChunk = 0;
-    let currentByte = 0;
-  
+  return new Promise(async (resolve, reject) => {
+    console.log(colors.yellowBright('Chunking has been started'));
+    let currentChunk = 1;
+    let lines = 0;
+
+    try {
+      lines = Number(
+        child_process.execSync(`wc -l numbers.txt`).toString().split(/\s+/)[0]
+      );
+    } catch (e) {
+      console.error("Please run this function in any unix-like shell");
+      process.exit(0);
+    }
+
+    let linesPerChunk = Math.floor(lines / numberOfChunks);
+    const remainder = lines % numberOfChunks;
+
     const readStream = fs.createReadStream(fileName, {
-      highWaterMark: chunkSize
+      encoding: "utf-8"
+    });
+
+    const rl = readline.createInterface({
+      input: readStream,
     });
   
-    readStream.on('data', (chunk) => {
-      console.log(`Write ${currentChunk + 1} chunk has been started`);
-      const chunkArray = chunk.toString().split('\n').sort((a,b) => {
-        if (Number(a) > Number(b)) return 1;
-        if (Number(a) < Number(b)) return -1;
-        if (Number(a) === Number(b)) return 0;
-      });
-      currentChunk++;
-      const writeStream = fs.createWriteStream(`chunk_${currentChunk}.txt`);
-      writeStream.write(chunkArray.join('\n'));
-      currentByte += chunk.length;
-  
-      if (currentByte >= fileSize) {
-        readStream.close();
+    let arr = [];
+    for await (const line of rl) {
+      if (Number.isNaN(line)) {
+        continue;
       }
-    });
+
+      arr.push(line)
+
+      if (arr.length === linesPerChunk + (currentChunk ^ numberOfChunks ? 0 : remainder)) {
+        try {
+          await writeFile(
+            `chunk_${currentChunk}.txt`,
+            arr
+              .sort((a, b) => Number(a) - Number(b))
+              .join("\n") + "\n",
+            {
+              encoding: "utf8",
+            }
+          );
   
-    readStream.on('close', () => {
-      resolve()
-      console.log(`\r \x1b[1m\x1b[92m Finished chunking \x1b[0m\x1b[0m`);
-    });
+          arr = []
+          currentChunk++
+        } catch (error) {
+          console.log('error', error);
+          reject(error)
+        }
+      }
+    }
+  
+    resolve()
+    console.log(colors.green('Finished chunking'));
   })
-  
 }
 
 export const createFileWithIntegers = async (fileName, fileSize) => {
