@@ -8,5 +8,8 @@
     "start": "node ./index.js"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "ansi-colors": "^4.1.3"
+  }
 }
